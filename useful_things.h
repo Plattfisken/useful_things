@@ -1,3 +1,13 @@
+/*
+This is an stb-style single header library providing simple quality of life utilities for C programming.
+
+To use simply add these two lines once in your project:
+
+#define USEFUL_THINGS_IMPLEMENTATION
+#include "useful_things.h"
+
+*/
+
 #include <stdio.h>
 #include <stdint.h>
 
@@ -52,11 +62,20 @@ struct s_arena {
 UT_Arena *UT_arena_create_size(size_t size);
 UT_Arena *UT_arena_create();
 
-void *UT_arena_alloc(UT_Arena *arena, size_t size);
+void *UT_arena_alloc(UT_Arena *arena, size_t num_objects, size_t object_size);
 void UT_arena_free(UT_Arena *arena);
+
+// TODO: dynamic array implementation?
 
 // file management
 size_t UT_get_file_size(FILE *f);
+
+// TODO:
+// UT_read_entire_file
+// UT_read_entire_file_and_null_terminate
+// UT_read_entire_file_as_dynamic_array?
+//
+// UT_write_string_to_file
 
 #ifdef USEFUL_THINGS_IMPLEMENTATION
 UT_Arena *UT_arena_create_size(size_t size) {
@@ -73,14 +92,23 @@ UT_Arena *UT_arena_create() {
     return UT_arena_create_size(default_size);
 }
 
-void *UT_arena_alloc(UT_Arena *arena, size_t size) {
+void *UT_arena_alloc(UT_Arena *arena, size_t num_objects, size_t object_size) {
+    const size_t allocation_size = num_objects * object_size;
     UT_Arena *linked_arena = arena;
     // Loop through all the arenas in the linked list. If one has space, allocate there and return.
     while(linked_arena) {
         size_t space_left = (linked_arena->memory + linked_arena->size) - linked_arena->cur;
-        if(size <= space_left) {
+        // handle misalignment
+        if((ptrdiff_t)linked_arena->cur % object_size != 0) {
+            u32 bytes_to_add_for_alignment = object_size - ((ptrdiff_t)linked_arena->cur % object_size);
+            space_left -= bytes_to_add_for_alignment;
+            if(allocation_size <= space_left)
+                linked_arena->cur += bytes_to_add_for_alignment;
+        }
+        if(allocation_size <= space_left) {
             void *ret = linked_arena->cur;
-            linked_arena->cur += size;
+            linked_arena->cur += allocation_size;
+            assert((ptrdiff_t)ret % object_size == 0 && "Misaligned allocation");
             return ret;
         }
         else {
@@ -88,13 +116,20 @@ void *UT_arena_alloc(UT_Arena *arena, size_t size) {
         }
     }
     // No arena had space. Create a new one and add to linked list
-    size_t new_arena_size = size > arena->size ? size : arena->size;
+    // oversize it slightly to handle alignment
+    size_t new_arena_size = allocation_size + object_size > arena->size ? allocation_size + object_size : arena->size;
     UT_Arena *new_arena = UT_arena_create_size(new_arena_size);
 
     new_arena->next = arena->next;
     arena->next = new_arena;
+    // handle misalignment
+    if((ptrdiff_t)new_arena->cur % object_size != 0) {
+        u32 bytes_to_add_for_alignment = object_size - ((ptrdiff_t)new_arena->cur % object_size);
+        new_arena->cur += bytes_to_add_for_alignment;
+    }
     void *ret = new_arena->cur;
-    new_arena->cur += size;
+    assert((ptrdiff_t)ret % object_size == 0 && "Misaligned allocation");
+    new_arena->cur += allocation_size;
     return ret;
 }
 
