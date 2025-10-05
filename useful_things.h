@@ -6,10 +6,41 @@ To use simply add these two lines once in your project:
 #define USEFUL_THINGS_IMPLEMENTATION
 #include "useful_things.h"
 
+Documentation:
+
+Memory management and arenas:
+An arena is a linear allocator for objects with a shared lifetime. You create an arena, allocate as
+many things as you want, then free the entire arena once. In practice the arena is implemented as a
+linked list of separate allocations. When you attempt to allocate into the arena it will either find
+space in the available allocations in the list or add a new allocation to the linked list. This way
+the arena is dynamic, while still preserving all pointers to previous arena allocations, it will
+never reallocate or move previously allocated data.
+
+procedures:
+
+UT_Arena *UT_arena_create_size(size_t size);
+Create a new arena of at least the specified size.
+
+UT_Arena *UT_arena_create();
+Create a new arena of default size (64 kilobytes)
+
+void *UT_arena_alloc(UT_Arena *arena, size_t num_objects, size_t object_size);
+Allocate into an arena
+Args:
+    arena: the arena to allocate in
+    num_objects: how many objects to allocate
+    object_size: size of one object
+Returns:
+    a pointer to the allocated region
+
+void UT_arena_free(UT_Arena *arena);
 */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <assert.h>
+#include <stdlib.h>
 
 #ifndef USEFUL_THINGS_H
 #define USEFUL_THINGS_H
@@ -69,13 +100,15 @@ void UT_arena_free(UT_Arena *arena);
 
 // file management
 size_t UT_get_file_size(FILE *f);
+char *UT_read_entire_file_and_null_terminate(const char *file_path);
+char *UT_read_entire_file_and_null_terminate_arena(const char *file_path, UT_Arena *arena);
 
 // TODO:
-// UT_read_entire_file
-// UT_read_entire_file_and_null_terminate
+char *UT_read_entire_file(const char *file_path);
 // UT_read_entire_file_as_dynamic_array?
 //
 // UT_write_string_to_file
+#endif
 
 #ifdef USEFUL_THINGS_IMPLEMENTATION
 UT_Arena *UT_arena_create_size(size_t size) {
@@ -150,5 +183,86 @@ size_t UT_get_file_size(FILE *f) {
     return size;
 }
 
-#endif
+// reads the file contents directly into a malloced buffer and nothing else.
+// to read text files into c-strings it's better to use UT_read_entire_file_and_null_terminate()
+char *UT_read_entire_file(const char *file_path) {
+    FILE *f = NULL;
+    char *buf = NULL;
+
+    f = fopen(file_path, "r");
+    if(!f) {
+        perror(NULL);
+        goto fail;
+    }
+
+    size_t file_size = UT_get_file_size(f);
+    buf = (char *)malloc(file_size);
+    u32 items_read = fread(buf, file_size, 1, f);
+    if(!items_read) {
+        goto fail;
+    }
+
+    fclose(f);
+
+    return buf;
+
+fail:
+    if(f) fclose(f);
+    if(buf) free(buf);
+    return NULL;
+}
+
+char *UT_read_entire_file_and_null_terminate(const char *file_path) {
+    FILE *f = NULL;
+    char *buf = NULL;
+
+    f = fopen(file_path, "r");
+    if(!f) {
+        perror(NULL);
+        goto fail;
+    }
+
+    size_t file_size = UT_get_file_size(f);
+    buf = (char *)malloc(file_size + 1);
+    u32 items_read = fread(buf, file_size, 1, f);
+    if(!items_read) {
+        goto fail;
+    }
+
+    buf[file_size] = 0;
+    fclose(f);
+
+    return buf;
+
+fail:
+    if(f) fclose(f);
+    if(buf) free(buf);
+    return NULL;
+}
+
+char *UT_read_entire_file_and_null_terminate_arena(const char *file_path, UT_Arena *arena) {
+    FILE *f = NULL;
+
+    f = fopen(file_path, "r");
+    if(!f) {
+        perror(NULL);
+        goto fail;
+    }
+
+    size_t file_size = UT_get_file_size(f);
+    char *buf = (char *)UT_arena_alloc(arena, file_size + 1, sizeof(u8));
+    u32 items_read = fread(buf, file_size, 1, f);
+    if(!items_read) {
+        // deallocate
+        arena->cur -= file_size + 1;
+        goto fail;
+    }
+
+    buf[file_size] = 0;
+    return buf;
+
+fail:
+    if(f) fclose(f);
+    return NULL;
+}
 #endif
