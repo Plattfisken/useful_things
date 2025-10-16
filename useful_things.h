@@ -43,6 +43,7 @@ void UT_arena_free(UT_Arena *arena);
 #include <stddef.h>
 #include <dirent.h>
 #include <string.h> // strlen
+#include <stdbool.h>
 
 #ifndef USEFUL_THINGS_H
 #define USEFUL_THINGS_H
@@ -116,6 +117,29 @@ typedef struct { \
     int data; \
 } t##List
 
+
+/*
+API:
+    Strings
+Overview:
+    Length based strings in C. Functions that return strings fall into two
+    categories: those that allocate new strings and those that don't. the two
+    groups can be easily distinguished by whether or not the function takes a
+    UT_Arena pointer as an argument. While this library does not require any
+    UT_String to be null-terminated it will still null-terminate any newly
+    allocated strings for interoperability with other apis. HOWEVER; some
+    functions return strings that are not newly allocated, but are instead
+    simply slices into a larger buffer, for simplicity and performance,
+    therefor you cannot always assume to be able to pass a string from this
+    library to an api that expects null-terminated strings. A few helper
+    functions exist for this reason such as: UT_is_null_terminated(UT_String s)
+    and UT_make_null_terminated(UT_String s, UT_Arena *arena) Any allocations
+    are made in an arena passed to the function. Strings in this category are
+    guaranteed to be null-terminated. Any strings returned from functions that
+    do not take an arena pointer are not guaranteed to be null-terminated, as
+    they are often simply slices into a larger string.
+*/
+
 typedef struct {
     char *data;
     int length;
@@ -124,16 +148,27 @@ typedef struct {
 // for use with string literals, not char pointers. sizeof("String") gives the length of the string plus one for null terminator
 #define UT_STR(s) (String){ .data = (s), .length = sizeof(s) - 1 }
 UT_String UT_make_string(char *s, int length, UT_Arena *arena);
+UT_String UT_copy_string(UT_String s, UT_Arena *arena);
+UT_String UT_slice_to_string(char *p, int length);
+UT_String UT_null_term_to_string(char *s);
+UT_String UT_make_null_terminated(UT_String s, UT_Arena *arena);
 UT_String UT_concat_strings(UT_String s1, UT_String s2, UT_Arena *arena);
+UT_String *UT_split_string(UT_String s, char delimiter, size_t *out_length, bool copy_substrings, UT_Arena *arena);
+UT_String UT_to_lower(UT_String s, UT_Arena *arena);
+UT_String UT_to_upper(UT_String s, UT_Arena *arena);
+bool UT_strings_are_equal(UT_String s1, UT_String s2);
+// this will read out-of-bounds memory in some cases lmao
+bool UT_is_null_terminated(UT_String s);
 
 // file management
 // TODO: don't rely on stdlib
 size_t UT_get_file_size(FILE *f);
-char *UT_read_entire_file_and_null_terminate(const char *file_path);
-char *UT_read_entire_file_and_null_terminate_arena(const char *file_path, UT_Arena *arena);
+UT_String UT_read_entire_file_as_string(UT_String file_path, UT_Arena *arena);
+char *UT_read_entire_file_and_null_terminate(char *file_path);
+char *UT_read_entire_file_and_null_terminate_arena(char *file_path, UT_Arena *arena);
 
 // TODO:
-char *UT_read_entire_file(const char *file_path);
+char *UT_read_entire_file(char *file_path);
 UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena);
 // UT_read_entire_file_as_dynamic_array?
 //
@@ -152,7 +187,18 @@ UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena
 #define String UT_String
 #define STR UT_STR
 #define make_string UT_make_string
+#define copy_string UT_copy_string
+#define slice_to_string UT_slice_to_string
+#define null_term_to_string UT_null_term_to_string
+#define make_null_terminated UT_make_null_terminated
 #define concat_strings UT_concat_strings
+#define split_string UT_split_string
+#define strings_are_equal UT_strings_are_equal
+#define is_null_terminated UT_is_null_terminated
+#define to_lower UT_to_lower
+#define to_upper UT_to_upper
+
+#define read_entire_file_as_string UT_read_entire_file_as_string
 #define list_directory UT_list_directory
 
 #endif
@@ -268,13 +314,31 @@ void UT_arena_free(UT_Arena *arena) {
 }
 
 // strings
-// may as well keep them null terminated.
 // TODO: what is a good name for this? Should have a clear naming convention for this kind of thing
 UT_String UT_make_string(char *s, int length, UT_Arena *arena) {
     char *data = UT_arena_alloc(arena, length + 1, 1);
     UT_MEMCPY(data, s, length);
     data[length] = 0;
     return (UT_String){ .data = data, .length = length };
+}
+
+UT_String UT_slice_to_string(char *p, int length) {
+    return (UT_String){ .data = p, .length = length };
+}
+
+UT_String UT_null_term_to_string(char *s) {
+    int length = 0;
+    while(s++) ++length;
+    return UT_slice_to_string(s, length);
+}
+
+UT_String UT_copy_string(UT_String s, UT_Arena *arena) {
+    return UT_make_string(s.data, s.length, arena);
+}
+
+UT_String UT_make_null_terminated(UT_String s, UT_Arena *arena) {
+    if(UT_is_null_terminated(s)) return s;
+    return UT_copy_string(s, arena);
 }
 
 UT_String UT_concat_strings(UT_String s1, UT_String s2, UT_Arena *arena) {
@@ -285,6 +349,82 @@ UT_String UT_concat_strings(UT_String s1, UT_String s2, UT_Arena *arena) {
     return (UT_String){ .data = data, .length = s1.length + s2.length };
 }
 
+bool UT_strings_are_equal(UT_String s1, UT_String s2) {
+    if(s1.length != s2.length) return false;
+    for(int i = 0; i < s1.length; ++i) {
+        if(s1.data[i] != s2.data[i]) return false;
+    }
+    return true;
+}
+
+bool UT_is_null_terminated(UT_String s) {
+    return s.data[s.length] == 0;
+}
+
+UT_String *UT_split_string(UT_String s, char delimiter, size_t *out_length, bool copy_substrings, UT_Arena *arena) {
+    *out_length = 0;
+    // determine how many splits
+    {
+        int substring_len = 0;
+        for(int i = 0; i < s.length; ++i) {
+            if(s.data[i] == delimiter && substring_len > 0) {
+                ++(*out_length);
+                substring_len = 0;
+            }
+            else {
+                ++substring_len;
+            }
+        }
+        if(substring_len > 0) {
+            ++(*out_length);
+        }
+    }
+    UT_String *substrings = UT_arena_alloc(arena, *out_length * sizeof(*substrings), sizeof(*substrings));
+    {
+        int substring_idx = 0;
+        int substring_len = 0;
+        for(int i = 0; i < s.length; ++i) {
+            if(s.data[i] == delimiter) {
+                if(substring_len > 0) {
+                    substrings[substring_idx++] = copy_substrings ?
+                        UT_make_string(&(s.data[i - substring_len]), substring_len, arena) :
+                        UT_slice_to_string(&(s.data[i - substring_len]), substring_len);
+                    substring_len = 0;
+                }
+            } else {
+                ++substring_len;
+            }
+        }
+        if(substring_len > 0) {
+            substrings[substring_idx] = copy_substrings ?
+                UT_make_string(&(s.data[s.length - substring_len]), substring_len, arena) :
+                UT_slice_to_string(&(s.data[s.length - substring_len]), substring_len);
+        }
+    }
+    return substrings;
+}
+
+UT_String UT_to_lower(UT_String s, UT_Arena *arena) {
+    UT_String lower_case = UT_copy_string(s, arena);
+    for(int i = 0; i < lower_case.length; ++i) {
+        if(lower_case.data[i] >= 'A' && lower_case.data[i] <= 'Z') {
+            lower_case.data[i] += 'a' - 'A';
+        }
+    }
+    return lower_case;
+}
+
+UT_String UT_to_upper(UT_String s, UT_Arena *arena) {
+    UT_String upper_case = UT_copy_string(s, arena);
+    for(int i = 0; i < upper_case.length; ++i) {
+        if(upper_case.data[i] >= 'a' && upper_case.data[i] <= 'z') {
+            upper_case.data[i] -= 'a' - 'A';
+        }
+    }
+    return upper_case;
+}
+
+// File system handling
 size_t UT_get_file_size(FILE *f) {
     fseek(f, 0, SEEK_END);
     size_t size = ftell(f);
@@ -294,7 +434,7 @@ size_t UT_get_file_size(FILE *f) {
 
 // reads the file contents directly into a malloced buffer and nothing else.
 // to read text files into c-strings it's better to use UT_read_entire_file_and_null_terminate()
-char *UT_read_entire_file(const char *file_path) {
+char *UT_read_entire_file(char *file_path) {
     FILE *f = NULL;
     char *buf = NULL;
 
@@ -321,7 +461,7 @@ fail:
     return NULL;
 }
 
-char *UT_read_entire_file_and_null_terminate(const char *file_path) {
+char *UT_read_entire_file_and_null_terminate(char *file_path) {
     FILE *f = NULL;
     char *buf = NULL;
 
@@ -349,7 +489,7 @@ fail:
     return NULL;
 }
 
-char *UT_read_entire_file_and_null_terminate_arena(const char *file_path, UT_Arena *arena) {
+char *UT_read_entire_file_and_null_terminate_arena(char *file_path, UT_Arena *arena) {
     FILE *f = NULL;
 
     f = fopen(file_path, "r");
@@ -368,11 +508,39 @@ char *UT_read_entire_file_and_null_terminate_arena(const char *file_path, UT_Are
     }
 
     buf[file_size] = 0;
+    fclose(f);
     return buf;
 
 fail:
     if(f) fclose(f);
     return NULL;
+}
+
+UT_String UT_read_entire_file_as_string(UT_String file_path, UT_Arena *arena) {
+    FILE *f = NULL;
+
+    f = fopen(file_path.data, "r");
+    if(!f) {
+        perror(NULL);
+        goto fail;
+    }
+
+    size_t file_size = UT_get_file_size(f);
+    char *buf = (char *)UT_arena_alloc(arena, file_size + 1, 1);
+    u32 items_read = fread(buf, file_size, 1, f);
+    if(!items_read) {
+        // deallocate
+        arena->cur -= file_size + 1;
+        goto fail;
+    }
+
+    buf[file_size] = 0;
+    fclose(f);
+    return UT_slice_to_string(buf, file_size);
+
+fail:
+    if(f) fclose(f);
+    return (UT_String){0, 0};
 }
 
 UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena) {
