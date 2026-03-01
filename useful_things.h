@@ -49,6 +49,8 @@ void UT_arena_free(UT_Arena *arena);
 #define UT_MEGABYTES(n) ((1024) * (KILOBYTES(n)))
 #define UT_GIGABYTES(n) ((1024) * (MEGABYTES(n)))
 
+#define UT_ARRAY_LENGTH(arr) (sizeof (arr) / sizeof (arr)[0])
+
 // memory management and arenas
 #define UT_ARENA_DEFAULT_SIZE UT_KILOBYTES(64)
 
@@ -137,6 +139,8 @@ UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena
 #define KILOBYTES UT_KILOBYTES
 #define MEGABYTES UT_MEGABYTES
 #define GIGABYTES UT_GIGABYTES
+
+#define ARRAY_LENGTH UT_ARRAY_LENGTH
 
 #define Arena UT_Arena
 #define arena_create_size UT_arena_create_size
