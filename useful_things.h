@@ -134,6 +134,10 @@ UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena
 // UT_write_string_to_file
 #ifdef USEFUL_THINGS_STRIP_PREFIX
 
+#define KILOBYTES UT_KILOBYTES
+#define MEGABYTES UT_MEGABYTES
+#define GIGABYTES UT_GIGABYTES
+
 #define Arena UT_Arena
 #define arena_create_size UT_arena_create_size
 #define arena_create UT_arena_create
