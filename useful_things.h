@@ -37,60 +37,27 @@ void UT_arena_free(UT_Arena *arena);
 */
 
 // TODO: don't depend on most of these
-#include <assert.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <dirent.h>
-#include <string.h> // strlen
-#include <stdbool.h>
-
 #ifndef USEFUL_THINGS_H
 #define USEFUL_THINGS_H
 
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h> // Need FILE * for some functions as of right now
+
 // common types
-#define KILOBYTES(n) ((1024) * (n))
-#define MEGABYTES(n) ((1024) * (KILOBYTES(n)))
-#define GIGABYTES(n) ((1024) * (MEGABYTES(n)))
-
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
-
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
-// Maybe?
-typedef int8_t s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef float f32;
-typedef double f64;
+#define UT_KILOBYTES(n) ((1024) * (n))
+#define UT_MEGABYTES(n) ((1024) * (KILOBYTES(n)))
+#define UT_GIGABYTES(n) ((1024) * (MEGABYTES(n)))
 
 // memory management and arenas
-#define UT_ARENA_DEFAULT_SIZE KILOBYTES(64)
+#define UT_ARENA_DEFAULT_SIZE UT_KILOBYTES(64)
 
 typedef struct UT_s_arena UT_Arena;
 struct UT_s_arena {
     struct UT_s_arena *next;
     size_t size;
-    u8 *cur;
-    u8 memory[];
+    uint8_t *cur;
+    uint8_t memory[];
 };
 
 UT_Arena *UT_arena_create_size(size_t size);
@@ -101,22 +68,15 @@ void UT_arena_free(UT_Arena *arena);
 
 // quick and dirty dynamic array implementation. Use by defining a type with at least these three members: T* data, int count, int capacity.
 // you can also use the UT_da_decl(T) to declare it which defines a type TList.
-#define UT_da_append(arr, item) \
-{ \
-    if((arr).count >= (arr).capacity) { \
-        (arr).capacity = (arr).capacity == 0 ? 8 : (arr).capacity*2; \
-        (arr).data = realloc((arr).data, (arr).capacity * sizeof *(arr).data); \
-        assert((arr).data && "Failed to realloc"); \
-    } \
-    (arr).data[(arr).count++] = (item); \
-}
-#define UT_da_decl(t) \
-typedef struct { \
-    t *data; \
-    int count; \
-    int data; \
-} t##List
-
+#define UT_da_append(arr, item)                                                    \
+do {                                                                               \
+    if((arr)->count >= (arr)->capacity) {                                          \
+        (arr)->capacity = (arr)->capacity == 0 ? 8 : (arr)->capacity*2;            \
+        (arr)->data = realloc((arr)->data, (arr)->capacity * sizeof *(arr)->data); \
+        assert((arr)->data && "Failed to realloc");                                \
+    }                                                                              \
+    (arr)->data[(arr)->count++] = (item);                                          \
+} while(0)
 
 /*
 API:
@@ -142,7 +102,7 @@ Overview:
 
 typedef struct {
     char *data;
-    int length;
+    size_t length;
 } UT_String;
 
 // for use with string literals, not char pointers. sizeof("String") gives the length of the string plus one for null terminator
@@ -152,7 +112,7 @@ UT_String UT_copy_string(UT_String s, UT_Arena *arena);
 UT_String UT_slice_to_string(char *p, int length);
 UT_String UT_null_term_to_string(char *s);
 UT_String UT_make_null_terminated(UT_String s, UT_Arena *arena);
-UT_String UT_concat_strings(UT_String s1, UT_String s2, UT_Arena *arena);
+UT_String UT_string_concat(UT_String s1, UT_String s2, UT_Arena *arena);
 UT_String *UT_split_string(UT_String s, char delimiter, size_t *out_length, bool copy_substrings, UT_Arena *arena);
 UT_String UT_to_lower(UT_String s, UT_Arena *arena);
 UT_String UT_to_upper(UT_String s, UT_Arena *arena);
@@ -161,7 +121,6 @@ bool UT_strings_are_equal(UT_String s1, UT_String s2);
 bool UT_is_null_terminated(UT_String s);
 
 // file management
-// TODO: don't rely on stdlib
 size_t UT_get_file_size(FILE *f);
 UT_String UT_read_entire_file_as_string(UT_String file_path, UT_Arena *arena);
 char *UT_read_entire_file_and_null_terminate(char *file_path);
@@ -182,7 +141,6 @@ UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena
 #define arena_free UT_arena_free
 
 #define da_append UT_da_append
-#define da_decl UT_da_decl
 
 #define String UT_String
 #define STR UT_STR
@@ -191,7 +149,7 @@ UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena
 #define slice_to_string UT_slice_to_string
 #define null_term_to_string UT_null_term_to_string
 #define make_null_terminated UT_make_null_terminated
-#define concat_strings UT_concat_strings
+#define string_concat UT_string_concat
 #define split_string UT_split_string
 #define strings_are_equal UT_strings_are_equal
 #define is_null_terminated UT_is_null_terminated
@@ -207,45 +165,15 @@ UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena
 
 #ifdef USEFUL_THINGS_IMPLEMENTATION
 
-#if defined USEFUL_THINGS_STDLIB
-
+#include <assert.h>
+#include <stddef.h> // ptrdiff_t
+#include <dirent.h>
+#include <string.h> // strlen
 #include <stdlib.h>
+
 #define UT_GET_MEMORY(size) malloc(size)
 #define UT_FREE_MEMORY(mem_pointer) free(mem_pointer)
 #define UT_MEMCPY(dst, src, len) memcpy(dst, src, len)
-
-// TODO: decide if leaving these undefined should cause compile time error or not.
-// Perhaps the user only uses functions that don't require platform specific implementations.
-// Then should we really make it impossible to compile without defining them?
-#else
-#define UNDEFINED_PLATFORM_ERROR_MESSAGE "Undefined function: "
-#warning "useful_things.h does not use the C standard library by default but depends on a few platform specific functions.\nEither define these yourself or enable stdlib by including:\n\t#define USEFUL_THINGS_STDLIB\nbefore including this library
-void *UT_get_memory_stub(int size) {
-    (void)size;
-    printf(UNDEFINED_PLATFORM_ERROR_MESSAGE"UT_GET_MEMORY(size)");
-    assert(0);
-    return NULL;
-}
-#define UT_GET_MEMORY(size) UT_get_memory_stub(size)
-
-int UT_free_memory_stub(void *mem_pointer) {
-    (void)mem_pointer;
-    printf(UNDEFINED_PLATFORM_ERROR_MESSAGE"UT_FREE_MEMORY(mem_pointer)");
-    assert(0);
-    return 0;
-}
-#define UT_FREE_MEMORY(mem_pointer) UT_free_memory_stub(mem_pointer);
-
-int UT_memcpy_stub(void *dst, void *src, size_t len) {
-    (void)dst;
-    (void)src;
-    (void)len;
-    printf(UNDEFINED_PLATFORM_ERROR_MESSAGE"UT_MEMCPY(dst, src, len)");
-    assert(0);
-    return 0;
-}
-#define UT_MEMCPY(dst, src, len)UT_memcpy_stub(dst, src, len)
-#endif
 
 // Memory management and arenas
 UT_Arena *UT_arena_create_size(size_t size) {
@@ -258,7 +186,7 @@ UT_Arena *UT_arena_create_size(size_t size) {
 }
 
 UT_Arena *UT_arena_create() {
-    u32 default_size = UT_ARENA_DEFAULT_SIZE;
+    uint32_t default_size = UT_ARENA_DEFAULT_SIZE;
     return UT_arena_create_size(default_size);
 }
 
@@ -269,7 +197,7 @@ void *UT_arena_alloc(UT_Arena *arena, size_t bytes_to_allocate, size_t alignment
         size_t space_left = (linked_arena->memory + linked_arena->size) - linked_arena->cur;
         // handle misalignment
         if((ptrdiff_t)linked_arena->cur % alignment != 0) {
-            u32 bytes_to_add_for_alignment = alignment - ((ptrdiff_t)linked_arena->cur % alignment);
+            uint32_t bytes_to_add_for_alignment = alignment - ((ptrdiff_t)linked_arena->cur % alignment);
             space_left -= bytes_to_add_for_alignment;
             if(bytes_to_allocate <= space_left)
                 linked_arena->cur += bytes_to_add_for_alignment;
@@ -293,7 +221,7 @@ void *UT_arena_alloc(UT_Arena *arena, size_t bytes_to_allocate, size_t alignment
     arena->next = new_arena;
     // handle misalignment
     if((ptrdiff_t)new_arena->cur % alignment != 0) {
-        u32 bytes_to_add_for_alignment = alignment - ((ptrdiff_t)new_arena->cur % alignment);
+        uint32_t bytes_to_add_for_alignment = alignment - ((ptrdiff_t)new_arena->cur % alignment);
         new_arena->cur += bytes_to_add_for_alignment;
     }
     void *ret = new_arena->cur;
@@ -328,7 +256,9 @@ UT_String UT_slice_to_string(char *p, int length) {
 
 UT_String UT_null_term_to_string(char *s) {
     int length = 0;
-    while(s++) ++length;
+    while(*(s + length)) {
+        ++length;
+    }
     return UT_slice_to_string(s, length);
 }
 
@@ -341,7 +271,7 @@ UT_String UT_make_null_terminated(UT_String s, UT_Arena *arena) {
     return UT_copy_string(s, arena);
 }
 
-UT_String UT_concat_strings(UT_String s1, UT_String s2, UT_Arena *arena) {
+UT_String UT_string_concat(UT_String s1, UT_String s2, UT_Arena *arena) {
     char *data = UT_arena_alloc(arena, s1.length + s2.length + 1, 1);
     UT_MEMCPY(data, s1.data , s1.length);
     UT_MEMCPY(data + s1.length, s2.data , s2.length);
@@ -349,9 +279,23 @@ UT_String UT_concat_strings(UT_String s1, UT_String s2, UT_Arena *arena) {
     return (UT_String){ .data = data, .length = s1.length + s2.length };
 }
 
+//UT_String UT_string_concat_many(UT_String *strings, size_t strings_length, UT_Arena *arena) {
+//    UT_String ret = {0};
+//    ret.length = 0;
+//    for(int i = 0; i < strings_length; ++i) {
+//        ret.length += strings[i].length;
+//    }
+//    ret.data = UT_arena_alloc(arena, ret.length + 1, 1);
+//    char *cur = ret.data;
+//    for(int i = 0; i < strings_length; ++i) {
+//     //TODO: not implemented
+//                                                           
+//    }
+//}
+
 bool UT_strings_are_equal(UT_String s1, UT_String s2) {
     if(s1.length != s2.length) return false;
-    for(int i = 0; i < s1.length; ++i) {
+    for(size_t i = 0; i < s1.length; ++i) {
         if(s1.data[i] != s2.data[i]) return false;
     }
     return true;
@@ -366,7 +310,7 @@ UT_String *UT_split_string(UT_String s, char delimiter, size_t *out_length, bool
     // determine how many splits
     {
         int substring_len = 0;
-        for(int i = 0; i < s.length; ++i) {
+        for(size_t i = 0; i < s.length; ++i) {
             if(s.data[i] == delimiter && substring_len > 0) {
                 ++(*out_length);
                 substring_len = 0;
@@ -383,7 +327,7 @@ UT_String *UT_split_string(UT_String s, char delimiter, size_t *out_length, bool
     {
         int substring_idx = 0;
         int substring_len = 0;
-        for(int i = 0; i < s.length; ++i) {
+        for(size_t i = 0; i < s.length; ++i) {
             if(s.data[i] == delimiter) {
                 if(substring_len > 0) {
                     substrings[substring_idx++] = copy_substrings ?
@@ -406,7 +350,7 @@ UT_String *UT_split_string(UT_String s, char delimiter, size_t *out_length, bool
 
 UT_String UT_to_lower(UT_String s, UT_Arena *arena) {
     UT_String lower_case = UT_copy_string(s, arena);
-    for(int i = 0; i < lower_case.length; ++i) {
+    for(size_t i = 0; i < lower_case.length; ++i) {
         if(lower_case.data[i] >= 'A' && lower_case.data[i] <= 'Z') {
             lower_case.data[i] += 'a' - 'A';
         }
@@ -416,7 +360,7 @@ UT_String UT_to_lower(UT_String s, UT_Arena *arena) {
 
 UT_String UT_to_upper(UT_String s, UT_Arena *arena) {
     UT_String upper_case = UT_copy_string(s, arena);
-    for(int i = 0; i < upper_case.length; ++i) {
+    for(size_t i = 0; i < upper_case.length; ++i) {
         if(upper_case.data[i] >= 'a' && upper_case.data[i] <= 'z') {
             upper_case.data[i] -= 'a' - 'A';
         }
@@ -446,7 +390,7 @@ char *UT_read_entire_file(char *file_path) {
 
     size_t file_size = UT_get_file_size(f);
     buf = (char *)UT_GET_MEMORY(file_size);
-    u32 items_read = fread(buf, file_size, 1, f);
+    size_t items_read = fread(buf, file_size, 1, f);
     if(!items_read) {
         goto fail;
     }
@@ -473,7 +417,7 @@ char *UT_read_entire_file_and_null_terminate(char *file_path) {
 
     size_t file_size = UT_get_file_size(f);
     buf = (char *)UT_GET_MEMORY(file_size + 1);
-    u32 items_read = fread(buf, file_size, 1, f);
+    size_t items_read = fread(buf, file_size, 1, f);
     if(!items_read) {
         goto fail;
     }
@@ -499,8 +443,8 @@ char *UT_read_entire_file_and_null_terminate_arena(char *file_path, UT_Arena *ar
     }
 
     size_t file_size = UT_get_file_size(f);
-    char *buf = (char *)UT_arena_alloc(arena, file_size + 1, sizeof(u8));
-    u32 items_read = fread(buf, file_size, 1, f);
+    char *buf = (char *)UT_arena_alloc(arena, file_size + 1, sizeof *buf);
+    size_t items_read = fread(buf, file_size, 1, f);
     if(!items_read) {
         // deallocate
         arena->cur -= file_size + 1;
@@ -527,7 +471,7 @@ UT_String UT_read_entire_file_as_string(UT_String file_path, UT_Arena *arena) {
 
     size_t file_size = UT_get_file_size(f);
     char *buf = (char *)UT_arena_alloc(arena, file_size + 1, 1);
-    u32 items_read = fread(buf, file_size, 1, f);
+    size_t items_read = fread(buf, file_size, 1, f);
     if(!items_read) {
         // deallocate
         arena->cur -= file_size + 1;

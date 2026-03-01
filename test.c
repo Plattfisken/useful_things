@@ -6,7 +6,7 @@
 int main(void) {
     Arena *arena = arena_create();
     printf("Hello, world!\n");
-    printf("%s\n", to_upper(STR("Hello!"), arena));
+    printf("%s\n", to_upper(STR("Hello!"), arena).data);
     printf("Hello again!\n");
 
     String csv = read_entire_file_as_string(STR("people-100.csv"), arena);
@@ -14,14 +14,12 @@ int main(void) {
     size_t substrings_length = 0;
     String *substrings = split_string(csv, '\n', &substrings_length, true, arena);
     for(int i = 0; i < substrings_length; ++i) {
-        // String lower = to_lower(substrings[i], arena);
         String upper = to_upper(substrings[i], arena);
-        printf("string: %s\n", substrings[i]);
-        printf("upper: %s\n", upper);
-        printf("string: %s\nupper: %s\n", substrings[i], upper);
-        // printf("lower: %s\n", lower);
+        printf("string: %s\n", substrings[i].data);
+        printf("upper: %s\n", upper.data);
+        printf("string: %s\nupper: %s\n", upper.data, substrings[i].data);
     }
-    printf("%d substrings\n", substrings_length);
+    printf("%zu substrings\n", substrings_length);
 
 
     // size_t file_count = 0;
