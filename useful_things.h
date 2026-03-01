@@ -126,12 +126,12 @@ UT_String UT_read_entire_file_as_string(UT_String file_path, UT_Arena *arena);
 char *UT_read_entire_file_and_null_terminate(char *file_path);
 char *UT_read_entire_file_and_null_terminate_arena(char *file_path, UT_Arena *arena);
 
-// TODO:
 char *UT_read_entire_file(char *file_path);
 UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena);
-// UT_read_entire_file_as_dynamic_array?
-//
-// UT_write_string_to_file
+
+#endif
+
+// NOTE: This section lives outside the header include guards so that the prefixes can be stripped at any point, even if the translation unit has already included the file before
 #ifdef USEFUL_THINGS_STRIP_PREFIX
 
 #define KILOBYTES UT_KILOBYTES
@@ -162,8 +162,6 @@ UT_String *UT_list_directory(char *dir_path, size_t *out_length, UT_Arena *arena
 
 #define read_entire_file_as_string UT_read_entire_file_as_string
 #define list_directory UT_list_directory
-
-#endif
 
 #endif
 
